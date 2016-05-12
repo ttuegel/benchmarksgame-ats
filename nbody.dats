@@ -1,6 +1,7 @@
 #include "share/atspre_define.hats"
 #include "share/atspre_staload.hats"
 
+staload "libc/SATS/stdlib.sats"
 staload "libc/SATS/math.sats"
 
 typedef vec3 = @{ x = double, y = double, z = double }
@@ -171,11 +172,14 @@ fun run(i : int, sys : system) : void =
     then ( advance(sys) ; run(i - 1, sys) )
     else ()
 
-implement main0 () = let
+implement main (argc, argv) = let
   val sys = init()
-  in (
-    $extfcall(void, "printf", "%.9f\n", energy(sys));
-    run(50000000, sys);
-    $extfcall(void, "printf", "%.9f\n", energy(sys));
-  )
+  in if (1 < argc)
+    then (
+      $extfcall(void, "printf", "%.9f\n", energy(sys));
+      run(atoi(argv[1]), sys);
+      $extfcall(void, "printf", "%.9f\n", energy(sys));
+      0
+    )
+    else 1
 end
