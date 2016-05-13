@@ -27,11 +27,12 @@ fun vec3_scale(s : double, a : vec3) : vec3 =
    }
 overload * with vec3_scale
 
-typedef system = @{ pos = arrszref(vec3)
-                  , vel = arrszref(vec3)
-                  , mass = arrszref(double)
-                  , n = int
-                  }
+typedef system (n : int) =
+  @{ pos = arrayref(vec3, n)
+   , vel = arrayref(vec3, n)
+   , mass = arrayref(double, n)
+   , n = int(n)
+   }
 
 val dp = 365.24 : double
 val dt = 0.01 : double
@@ -90,18 +91,22 @@ val neptune =
    , mass = 5.15138902046611451e-05 * sol.mass
    }
 
-fun offset (@{ vel = v, mass = m, n = n, ... } : system) : vec3 = let
-  fun loop (i : int, off : vec3) :<cloref1> vec3 =
+fun offset {n : nat}
+  (@{ vel = v, mass = m, n = n, ... } : system(n)) : vec3 = let
+  fun loop {i : nat | i <= n} (i : int(i), off : vec3) :<cloref1> vec3 =
     if i < n
       then loop (succ(i), off + m[i] * v[i])
       else off
   in (~1.0 / sol.mass) * loop(0, @{ x = 0.0, y = 0.0, z = 0.0 })
   end
 
-fun init () : system = let
-  val ms = (arrszref)$arrpsz(sol.mass, jupiter.mass, saturn.mass, uranus.mass, neptune.mass)
-  val vs = (arrszref)$arrpsz(sol.vel, jupiter.vel, saturn.vel, uranus.vel, neptune.vel)
-  val xs = (arrszref)$arrpsz(sol.pos, jupiter.pos, saturn.pos, uranus.pos, neptune.pos)
+fun init () : system(5) = let
+  val ms = (arrayref)$arrpsz( sol.mass, jupiter.mass, saturn.mass
+                            , uranus.mass, neptune.mass )
+  val vs = (arrayref)$arrpsz( sol.vel, jupiter.vel, saturn.vel
+                            , uranus.vel, neptune.vel )
+  val xs = (arrayref)$arrpsz( sol.pos, jupiter.pos, saturn.pos
+                            , uranus.pos, neptune.pos )
   val sys = @{ pos = xs, vel = vs, mass = ms, n = 5 }
   val () = vs[0] := offset(sys)
   in @{ pos = xs, vel = vs, mass = ms, n = 5 }
@@ -109,46 +114,53 @@ fun init () : system = let
 
 fun squared (@{ x = x, y = y, z = z } : vec3) = x * x + y * y + z * z
 
-fun kinetic(@{ mass = m, vel = v, n = n, ... } : system) : double = let
-  fun loop(i : size_t, T : double) :<cloref1> double =
+fun kinetic {n : nat}
+  (@{ mass = m, vel = v, n = n, ... } : system(n)) : double = let
+  fun loop {i : nat | i <= n} (i : int(i), T : double) :<cloref1> double =
     if i < n
       then let
         val dT = 0.5 * m[i] * squared(v[i])
         in loop(succ(i), T + dT)
       end
       else T
-  in loop(i2sz(0), 0.0)
+  in loop(0, 0.0)
 end
 
 fun potential
-  (@{ mass = m, vel = v, pos = x, n = n, ... } : system) : double = let
-  fun loop(V : double, i : size_t, j : size_t) :<cloref1> double =
+  {n : nat | n > 0}
+  (@{ mass = m, vel = v, pos = x, n = n, ... } : system(n)) : double = let
+  fun loop {j : nat | j <= n} {i : nat | i < j}
+    (V : double, i : int(i), j : int(j)) :<cloref1> double =
     if j < n
       then let
         val r = x[i] - x[j]
         val dV = (~1.0) * m[i] * m[j] / sqrt_double(squared(r))
         in loop(V + dV, i, succ(j))
         end
-      else if i < n
-        then loop(V, succ(i), succ(succ(i)))
+      else if i < n - 1
+        then loop(V, i + 1, i + 2)
         else V
-  in loop(0.0, i2sz(0), i2sz(1))
+  in loop(0.0, 0, 1)
   end
 
-fun energy(sys : system) : double =
+fun energy {n : nat | n > 0} (sys : system(n)) : double =
   kinetic(sys) + potential(sys)
 
-fun kinematic(@{ vel = v, pos = x, n = n, ... } : system) : void = let
-  fun loop(i : size_t) :<cloref1> void =
+fun kinematic {n : nat}
+  (@{ vel = v, pos = x, n = n, ... } : system(n)) : void = let
+  fun loop {i : nat | i <= n} (i : int(i)) :<cloref1> void =
     if i < n
       then ( x[i] := x[i] + dt * v[i]
-           ; loop(succ i) )
+           ; loop(succ i)
+           )
       else ()
-  in loop(i2sz(0))
+  in loop(0)
   end
 
-fun dynamic(@{ mass = m, pos = x, vel = v, n = n, ... } : system) : void = let
-  fun loop(i : size_t, j : size_t) :<cloref1> void =
+fun dynamic {n : nat | n > 0}
+  (@{ mass = m, pos = x, vel = v, n = n, ... } : system(n)) : void = let
+  fun loop {j : nat | j <= n} {i : nat | i <= j}
+    (i : int(i), j : int(j)) :<cloref1> void =
     if j < n
       then let
         val rij = x[i] - x[j]
@@ -159,15 +171,16 @@ fun dynamic(@{ mass = m, pos = x, vel = v, n = n, ... } : system) : void = let
         val () = v[j] := v[j] + mag * m[i] * rij
         in loop(i, succ(j))
         end
-      else if i < n
-        then loop(succ(i), succ(succ(i)))
+      else if i < n - 1
+        then loop(i + 1, i + 2)
         else ()
-  in loop(i2sz(0), i2sz(1))
+  in loop(0, 1)
   end
 
-fun advance(sys : system) : void = ( dynamic(sys) ; kinematic(sys) )
+fun advance {n : nat | n > 0} (sys : system(n)) : void =
+  ( dynamic(sys) ; kinematic(sys) )
 
-fun run(i : int, sys : system) : void =
+fun run {n : nat | n > 0} (i : int, sys : system(n)) : void =
   if i > 0
     then ( advance(sys) ; run(i - 1, sys) )
     else ()
